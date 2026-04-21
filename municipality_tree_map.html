@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Municipality District Tree</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.control.layers.tree@1.1.0/L.Control.Layers.Tree.css"/>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+#map {
+  width: 100%;
+  height: 100vh;
+}
+.leaflet-control-layers {
+  max-height: 85vh;
+  overflow: auto;
+  font-size: 13px;
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.control.layers.tree@1.1.0/L.Control.Layers.Tree.js"></script>
+
+<script>
+const map = L.map("map");
+
+const osm = L.tileLayer(
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { attribution: "&copy; OpenStreetMap contributors" }
+).addTo(map);
+
+const municipalityColors = {
+  "Dammam": "#2563eb",
+  "Dhahran": "#16a34a",
+  "Khobar": "#dc2626"
+};
+
+function boundaryStyle(city) {
+  return {
+    color: "black",
+    fillColor: municipalityColors[city],
+    weight: 3,
+    fillOpacity: 0.08
+  };
+}
+
+function districtStyle(city) {
+  return {
+    color: municipalityColors[city],
+    fillColor: municipalityColors[city],
+    weight: 1,
+    fillOpacity: 0.35
+  };
+}
+
+Promise.all([
+  fetch("./municipality.geojson").then(r => r.json()),
+  fetch("./dammam.geojson").then(r => r.json()),
+  fetch("./dhahran.geojson").then(r => r.json()),
+  fetch("./khobar.geojson").then(r => r.json())
+]).then(([municipalityData, dammamData, dhahranData, khobarData]) => {
+
+  const boundaryLayers = {
+    "Dammam": null,
+    "Dhahran": null,
+    "Khobar": null
+  };
+
+  municipalityData.features.forEach(f => {
+    const name = (f.properties.REMARKS || "").trim();
+    let city = null;
+
+    if (name === "الدمام") city = "Dammam";
+    if (name === "الظهران") city = "Dhahran";
+    if (name === "الخبر") city = "Khobar";
+
+    if (!city) return;
+
+    boundaryLayers[city] = L.geoJSON(f, {
+      style: boundaryStyle(city)
+    }).bindTooltip(city);
+  });
+
+  function makeDistrictNodes(data, city) {
+    return data.features.map(f => {
+      const districtName = (f.properties.REMARKS || "").trim();
+
+      const layer = L.geoJSON(f, {
+        style: districtStyle(city)
+      }).bindTooltip(districtName + " (" + city + ")");
+
+      return {
+        label: districtName,
+        layer: layer
+      };
+    });
+  }
+
+  const dammamDistricts = makeDistrictNodes(dammamData, "Dammam");
+  const dhahranDistricts = makeDistrictNodes(dhahranData, "Dhahran");
+  const khobarDistricts = makeDistrictNodes(khobarData, "Khobar");
+
+  const overlaysTree = {
+    label: "Municipality",
+    children: [
+      {
+        label: "Dammam",
+        selectAllCheckbox: true,
+        children: [
+          { label: "Boundary", layer: boundaryLayers["Dammam"] },
+          {
+            label: "Districts",
+            selectAllCheckbox: true,
+            children: dammamDistricts
+          }
+        ]
+      },
+      {
+        label: "Dhahran",
+        selectAllCheckbox: true,
+        children: [
+          { label: "Boundary", layer: boundaryLayers["Dhahran"] },
+          {
+            label: "Districts",
+            selectAllCheckbox: true,
+            children: dhahranDistricts
+          }
+        ]
+      },
+      {
+        label: "Khobar",
+        selectAllCheckbox: true,
+        children: [
+          { label: "Boundary", layer: boundaryLayers["Khobar"] },
+          {
+            label: "Districts",
+            selectAllCheckbox: true,
+            children: khobarDistricts
+          }
+        ]
+      }
+    ]
+  };
+
+  L.control.layers.tree(
+    { "OpenStreetMap": osm },
+    overlaysTree,
+    {
+      collapsed: false,
+      namedToggle: true,
+      selectorBack: false
+    }
+  ).addTo(map);
+
+  const allLayers = [
+    boundaryLayers["Dammam"],
+    boundaryLayers["Dhahran"],
+    boundaryLayers["Khobar"],
+    ...dammamDistricts.map(x => x.layer),
+    ...dhahranDistricts.map(x => x.layer),
+    ...khobarDistricts.map(x => x.layer)
+  ].filter(Boolean);
+
+  const group = L.featureGroup(allLayers);
+  map.fitBounds(group.getBounds());
+
+}).catch(err => {
+  console.error("Error loading GeoJSON:", err);
+});
+</script>
+</body>
+</html>
