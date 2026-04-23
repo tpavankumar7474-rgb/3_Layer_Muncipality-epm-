@@ -68,20 +68,21 @@ function boundaryStyle(city) {
 
 function districtStyle(city) {
   return {
-    color: municipalityColors[city],
+    color: "#000000",      // black district border
+    weight: 2,             // thicker border
+    opacity: 1,
     fillColor: municipalityColors[city],
-    weight: 1,
-    fillOpacity: 0.35
+    fillOpacity: 0.60      // darker district fill
   };
 }
 
 // ---- data stores ----
-const districtCounts = {};         // from Grafana query: {districtName: {count, lat, long}}
-const districtToCity = {};         // from geojson
-const districtLayers = {};         // district polygon layers
+const districtCounts = {};         
+const districtToCity = {};         
+const districtLayers = {};         
 const municipalityBoundaryLayers = {};
-const municipalityCenters = {};    // center of municipality boundary
-const municipalityTotals = {};     // sum of district counts per municipality
+const municipalityCenters = {};    
+const municipalityTotals = {};     
 
 const districtMarkers = {};
 const municipalityMarkers = {};
@@ -98,14 +99,17 @@ function createTextMarker(lat, long, text) {
 }
 
 function clearAllCountMarkers() {
-  Object.values(districtMarkers).forEach(m => { if (map.hasLayer(m)) map.removeLayer(m); });
-  Object.values(municipalityMarkers).forEach(m => { if (map.hasLayer(m)) map.removeLayer(m); });
+  Object.values(districtMarkers).forEach(m => {
+    if (map.hasLayer(m)) map.removeLayer(m);
+  });
+  Object.values(municipalityMarkers).forEach(m => {
+    if (map.hasLayer(m)) map.removeLayer(m);
+  });
 }
 
 function refreshCounts() {
   clearAllCountMarkers();
 
-  // find selected districts by municipality
   const selectedDistrictsByCity = {
     "Dammam": [],
     "Dhahran": [],
@@ -121,7 +125,6 @@ function refreshCounts() {
     }
   });
 
-  // 1) if districts selected in a municipality -> show district counts only
   Object.keys(selectedDistrictsByCity).forEach(city => {
     const selected = selectedDistrictsByCity[city];
 
@@ -132,11 +135,19 @@ function refreshCounts() {
 
         if (!districtMarkers[name]) {
           districtMarkers[name] = createTextMarker(d.lat, d.long, d.count);
+        } else {
+          districtMarkers[name].setLatLng([d.lat, d.long]);
+          districtMarkers[name].setIcon(L.divIcon({
+            className: "count-label",
+            html: `<div class="count-text">${d.count}</div>`,
+            iconSize: [50, 20],
+            iconAnchor: [25, 10]
+          }));
         }
+
         districtMarkers[name].addTo(map);
       });
     } else {
-      // 2) if no district selected, but municipality boundary selected -> show municipality total
       const boundary = municipalityBoundaryLayers[city];
       const total = municipalityTotals[city] || 0;
       const center = municipalityCenters[city];
@@ -196,6 +207,21 @@ Promise.all([
       const layer = L.geoJSON(f, {
         style: districtStyle(city)
       }).bindTooltip(districtName + " (" + city + ")");
+
+      layer.on({
+        mouseover: function (e) {
+          e.target.setStyle({
+            color: "#000000",
+            weight: 3,
+            opacity: 1,
+            fillColor: municipalityColors[city],
+            fillOpacity: 0.85
+          });
+        },
+        mouseout: function (e) {
+          e.target.setStyle(districtStyle(city));
+        }
+      });
 
       districtLayers[districtName] = layer;
       districtToCity[districtName] = city;
@@ -283,7 +309,6 @@ Promise.all([
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "incidentData") return;
 
-  // clear old values
   Object.keys(districtCounts).forEach(k => delete districtCounts[k]);
   municipalityTotals["Dammam"] = 0;
   municipalityTotals["Dhahran"] = 0;
