@@ -105,12 +105,29 @@ const osm = L.tileLayer(
   { attribution: "&copy; OpenStreetMap contributors" }
 ).addTo(map);
 
-// default municipality colors used only when district count is not available
+// Municipality colors only for boundary/base appearance
 const municipalityColors = {
   "Dammam": "#2563eb",
   "Dhahran": "#16a34a",
   "Khobar": "#dc2626"
 };
+
+// -----------------------------
+// DATA STORES
+// -----------------------------
+const districtCounts = {};               // { districtName: { count, lat, long } }
+const districtToCity = {};               // district -> municipality
+const districtLayers = {};               // district polygon layers
+const municipalityBoundaryLayers = {};   // municipality boundary layers
+const municipalityCenters = {};          // municipality center for total label
+const municipalityTotals = {             // municipality total counts
+  "Dammam": 0,
+  "Dhahran": 0,
+  "Khobar": 0
+};
+
+const districtMarkers = {};
+const municipalityMarkers = {};
 
 // -----------------------------
 // RISK LOGIC
@@ -121,45 +138,43 @@ function getRiskLevel(count) {
   if (count <= 0) {
     return {
       level: "No Data",
-      color: "#9ca3af",
-      range: "0"
+      color: "#2563eb"   // BLUE
     };
   }
 
   if (count <= 100) {
-    if (count >= 80) return { level: "High Risk", color: "#dc2626", range: "80 - 100" };
-    if (count >= 40) return { level: "Medium Risk", color: "#facc15", range: "40 - 79" };
-    return { level: "Low Risk", color: "#16a34a", range: "1 - 39" };
+    if (count >= 80) return { level: "High Risk", color: "#dc2626" };   // RED
+    if (count >= 40) return { level: "Medium Risk", color: "#facc15" }; // YELLOW
+    return { level: "Low Risk", color: "#16a34a" };                     // GREEN
   }
 
   if (count <= 1000) {
-    if (count >= 800) return { level: "High Risk", color: "#dc2626", range: "800 - 1000" };
-    if (count >= 400) return { level: "Medium Risk", color: "#facc15", range: "400 - 799" };
-    return { level: "Low Risk", color: "#16a34a", range: "100 - 399" };
+    if (count >= 800) return { level: "High Risk", color: "#dc2626" };
+    if (count >= 400) return { level: "Medium Risk", color: "#facc15" };
+    return { level: "Low Risk", color: "#16a34a" };
   }
 
   if (count <= 10000) {
-    if (count >= 8000) return { level: "High Risk", color: "#dc2626", range: "8000 - 10000" };
-    if (count >= 4000) return { level: "Medium Risk", color: "#facc15", range: "4000 - 7999" };
-    return { level: "Low Risk", color: "#16a34a", range: "1000 - 3999" };
+    if (count >= 8000) return { level: "High Risk", color: "#dc2626" };
+    if (count >= 4000) return { level: "Medium Risk", color: "#facc15" };
+    return { level: "Low Risk", color: "#16a34a" };
   }
 
   if (count <= 100000) {
-    if (count >= 80000) return { level: "High Risk", color: "#dc2626", range: "80000 - 100000" };
-    if (count >= 40000) return { level: "Medium Risk", color: "#facc15", range: "40000 - 79999" };
-    return { level: "Low Risk", color: "#16a34a", range: "10000 - 39999" };
+    if (count >= 80000) return { level: "High Risk", color: "#dc2626" };
+    if (count >= 40000) return { level: "Medium Risk", color: "#facc15" };
+    return { level: "Low Risk", color: "#16a34a" };
   }
 
   if (count <= 1000000) {
-    if (count >= 800000) return { level: "High Risk", color: "#dc2626", range: "800000 - 1000000" };
-    if (count >= 400000) return { level: "Medium Risk", color: "#facc15", range: "400000 - 799999" };
-    return { level: "Low Risk", color: "#16a34a", range: "100000 - 399999" };
+    if (count >= 800000) return { level: "High Risk", color: "#dc2626" };
+    if (count >= 400000) return { level: "Medium Risk", color: "#facc15" };
+    return { level: "Low Risk", color: "#16a34a" };
   }
 
   return {
-    level: "Very High Risk",
-    color: "#7f1d1d",
-    range: "> 1000000"
+    level: "High Risk",
+    color: "#dc2626"
   };
 }
 
@@ -167,10 +182,9 @@ function getDistrictCount(districtName) {
   return Number(districtCounts[districtName]?.count || 0);
 }
 
-function getDistrictFillColor(districtName, city) {
+function getDistrictFillColor(districtName) {
   const count = getDistrictCount(districtName);
-  if (count > 0) return getRiskLevel(count).color;
-  return municipalityColors[city];
+  return getRiskLevel(count).color;
 }
 
 // -----------------------------
@@ -178,10 +192,10 @@ function getDistrictFillColor(districtName, city) {
 // -----------------------------
 function boundaryStyle(city) {
   return {
-    color: "black",
+    color: "#000000",
     fillColor: municipalityColors[city],
     weight: 3,
-    fillOpacity: 0.08
+    fillOpacity: 0.12
   };
 }
 
@@ -190,26 +204,13 @@ function districtStyle(city, districtName = "") {
     color: "#000000",
     weight: 2,
     opacity: 1,
-    fillColor: getDistrictFillColor(districtName, city),
-    fillOpacity: 0.60
+    fillColor: getDistrictFillColor(districtName),
+    fillOpacity: 0.65
   };
 }
 
 // -----------------------------
-// DATA STORES
-// -----------------------------
-const districtCounts = {};
-const districtToCity = {};
-const districtLayers = {};
-const municipalityBoundaryLayers = {};
-const municipalityCenters = {};
-const municipalityTotals = {};
-
-const districtMarkers = {};
-const municipalityMarkers = {};
-
-// -----------------------------
-// TEXT MARKERS
+// MARKERS
 // -----------------------------
 function createTextMarker(lat, long, text) {
   return L.marker([lat, long], {
@@ -253,6 +254,10 @@ legend.onAdd = function () {
         <span class="legend-color" style="background:#16a34a;"></span>
         <span>Low Risk</span>
       </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background:#2563eb;"></span>
+        <span>No Data</span>
+      </div>
     </div>
   `;
   return div;
@@ -261,7 +266,7 @@ legend.onAdd = function () {
 legend.addTo(map);
 
 // -----------------------------
-// REFRESH COUNTS + TOOLTIPS
+// REFRESH COUNTS / COLORS
 // -----------------------------
 function refreshCounts() {
   clearAllCountMarkers();
@@ -284,43 +289,42 @@ function refreshCounts() {
   Object.keys(selectedDistrictsByCity).forEach(city => {
     const selected = selectedDistrictsByCity[city];
 
+    // If districts selected for this municipality -> show district counts
     if (selected.length > 0) {
       selected.forEach(name => {
         const d = districtCounts[name];
-        if (!d) return;
+        const count = Number(d?.count || 0);
+        const risk = getRiskLevel(count);
 
-        if (!districtMarkers[name]) {
-          districtMarkers[name] = createTextMarker(d.lat, d.long, d.count);
-        } else {
-          districtMarkers[name].setLatLng([d.lat, d.long]);
-          districtMarkers[name].setIcon(L.divIcon({
-            className: "count-label",
-            html: `<div class="count-text">${d.count}</div>`,
-            iconSize: [50, 20],
-            iconAnchor: [25, 10]
-          }));
+        if (d && !isNaN(d.lat) && !isNaN(d.long)) {
+          if (!districtMarkers[name]) {
+            districtMarkers[name] = createTextMarker(d.lat, d.long, count);
+          } else {
+            districtMarkers[name].setLatLng([d.lat, d.long]);
+            districtMarkers[name].setIcon(L.divIcon({
+              className: "count-label",
+              html: `<div class="count-text">${count}</div>`,
+              iconSize: [50, 20],
+              iconAnchor: [25, 10]
+            }));
+          }
+          districtMarkers[name].addTo(map);
         }
 
-        districtMarkers[name].addTo(map);
-
-        const risk = getRiskLevel(d.count);
-
         if (districtLayers[name]) {
+          districtLayers[name].setStyle(districtStyle(city, name));
           districtLayers[name].setTooltipContent(`
             <div>
               <b>District:</b> ${name}<br>
-              <b>Municipality:</b> ${districtToCity[name] || ""}<br>
-              <b>Count:</b> ${d.count}<br>
+              <b>Municipality:</b> ${city}<br>
+              <b>Count:</b> ${count}<br>
               <b>Risk:</b> ${risk.level}
             </div>
           `);
-
-          districtLayers[name].setStyle(
-            districtStyle(districtToCity[name], name)
-          );
         }
       });
     } else {
+      // If no districts selected, but municipality boundary selected -> show municipality total
       const boundary = municipalityBoundaryLayers[city];
       const total = municipalityTotals[city] || 0;
       const center = municipalityCenters[city];
@@ -329,12 +333,12 @@ function refreshCounts() {
         boundary.setTooltipContent(`
           <div>
             <b>Municipality:</b> ${city}<br>
-            <b>Count:</b> ${total}
+            <b>Total Count:</b> ${total}
           </div>
         `);
       }
 
-      if (boundary && center && map.hasLayer(boundary) && total > 0) {
+      if (boundary && center && map.hasLayer(boundary)) {
         if (!municipalityMarkers[city]) {
           municipalityMarkers[city] = createTextMarker(center.lat, center.long, total);
         } else {
@@ -342,8 +346,8 @@ function refreshCounts() {
           municipalityMarkers[city].setIcon(L.divIcon({
             className: "count-label",
             html: `<div class="count-text">${total}</div>`,
-            iconSize: [50, 20],
-            iconAnchor: [25, 10]
+            iconSize: [60, 20],
+            iconAnchor: [30, 10]
           }));
         }
         municipalityMarkers[city].addTo(map);
@@ -353,7 +357,7 @@ function refreshCounts() {
 }
 
 // -----------------------------
-// LOAD GEOJSON
+// LOAD GEOJSON FILES
 // -----------------------------
 Promise.all([
   fetch("./municipality.geojson").then(r => r.json()),
@@ -362,6 +366,7 @@ Promise.all([
   fetch("./khobar.geojson").then(r => r.json())
 ]).then(([municipalityData, dammamData, dhahranData, khobarData]) => {
 
+  // Municipality boundaries
   municipalityData.features.forEach(f => {
     const name = (f.properties.REMARKS || "").trim();
     let city = null;
@@ -378,7 +383,7 @@ Promise.all([
     boundary.bindTooltip(
       `<div>
         <b>Municipality:</b> ${city}<br>
-        <b>Count:</b> 0
+        <b>Total Count:</b> 0
       </div>`,
       {
         sticky: true,
@@ -393,7 +398,7 @@ Promise.all([
       boundary.setTooltipContent(`
         <div>
           <b>Municipality:</b> ${city}<br>
-          <b>Count:</b> ${total}
+          <b>Total Count:</b> ${total}
         </div>
       `);
     });
@@ -407,6 +412,7 @@ Promise.all([
     boundary.on("add remove", () => setTimeout(refreshCounts, 30));
   });
 
+  // District layers
   function makeDistrictNodes(data, city) {
     return data.features.map(f => {
       const districtName = (f.properties.REMARKS || "").trim();
@@ -442,7 +448,7 @@ Promise.all([
             color: "#000000",
             weight: 3,
             opacity: 1,
-            fillColor: getDistrictFillColor(districtName, city),
+            fillColor: getDistrictFillColor(districtName),
             fillOpacity: 0.85
           });
           layer.setTooltipContent(getDistrictTooltipHtml());
@@ -486,6 +492,7 @@ Promise.all([
   const dhahranDistricts = makeDistrictNodes(dhahranData, "Dhahran");
   const khobarDistricts = makeDistrictNodes(khobarData, "Khobar");
 
+  // Tree control
   const overlaysTree = {
     label: "Municipality",
     children: [
@@ -553,25 +560,31 @@ Promise.all([
 });
 
 // -----------------------------
-// RECEIVE GRAFANA DATA
+// RECEIVE DATA FROM GRAFANA
 // -----------------------------
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "incidentData") return;
 
+  // Reset data
   Object.keys(districtCounts).forEach(k => delete districtCounts[k]);
   municipalityTotals["Dammam"] = 0;
   municipalityTotals["Dhahran"] = 0;
   municipalityTotals["Khobar"] = 0;
 
+  // Fill district counts
   (event.data.data || []).forEach(row => {
     const name = row.state;
     const count = Number(row.count || 0);
     const lat = Number(row.lat);
     const long = Number(row.long);
 
-    if (!name || isNaN(count) || isNaN(lat) || isNaN(long)) return;
+    if (!name || isNaN(count)) return;
 
-    districtCounts[name] = { count, lat, long };
+    districtCounts[name] = {
+      count: count,
+      lat: isNaN(lat) ? null : lat,
+      long: isNaN(long) ? null : long
+    };
 
     const city = districtToCity[name];
     if (city) {
@@ -579,6 +592,7 @@ window.addEventListener("message", (event) => {
     }
   });
 
+  // Refresh district colors after new data
   Object.keys(districtLayers).forEach(name => {
     const city = districtToCity[name];
     if (districtLayers[name]) {
