@@ -48,30 +48,47 @@ html, body { margin:0; padding:0; height:100%; }
   line-height: 1.5;
 }
 
-.info.legend {
+/* simple legend at bottom center */
+.simple-legend {
+  position: fixed !important;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
   background: rgba(255,255,255,0.96);
-  padding: 10px 12px;
+  padding: 8px 14px;
   border: 1px solid #333;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
   color: #111;
-  max-width: 280px;
+  z-index: 9999;
+  min-width: 320px;
+  text-align: center;
 }
 
-.legend-row {
+.legend-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.legend-items {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
   display: flex;
   align-items: center;
-  margin-bottom: 4px;
+  gap: 6px;
 }
 
 .legend-color {
   width: 14px;
   height: 14px;
   border: 1px solid #000;
-  margin-right: 8px;
-  flex: 0 0 14px;
+  display: inline-block;
 }
 </style>
 </head>
@@ -88,7 +105,7 @@ const osm = L.tileLayer(
   { attribution: "&copy; OpenStreetMap contributors" }
 ).addTo(map);
 
-// default municipality colors only used when count not available
+// default municipality colors used only when district count is not available
 const municipalityColors = {
   "Dammam": "#2563eb",
   "Dhahran": "#16a34a",
@@ -152,14 +169,12 @@ function getDistrictCount(districtName) {
 
 function getDistrictFillColor(districtName, city) {
   const count = getDistrictCount(districtName);
-  if (count > 0) {
-    return getRiskLevel(count).color;
-  }
+  if (count > 0) return getRiskLevel(count).color;
   return municipalityColors[city];
 }
 
 // -----------------------------
-// BASE STYLES
+// STYLES
 // -----------------------------
 function boundaryStyle(city) {
   return {
@@ -194,7 +209,7 @@ const districtMarkers = {};
 const municipalityMarkers = {};
 
 // -----------------------------
-// MARKERS
+// TEXT MARKERS
 // -----------------------------
 function createTextMarker(lat, long, text) {
   return L.marker([lat, long], {
@@ -217,50 +232,29 @@ function clearAllCountMarkers() {
 }
 
 // -----------------------------
-// LEGEND
+// SIMPLE LEGEND
 // -----------------------------
-const legend = L.control({ position: "bottomright" });
+const legend = L.control({ position: "bottomleft" });
 
 legend.onAdd = function () {
-  const div = L.DomUtil.create("div", "info legend");
-
+  const div = L.DomUtil.create("div", "info legend simple-legend");
   div.innerHTML = `
-    <div style="font-weight:bold; margin-bottom:8px;">Risk Legend</div>
-
-    <div style="margin-bottom:6px;"><b>1 - 100</b></div>
-    <div class="legend-row"><span class="legend-color" style="background:#dc2626;"></span>High Risk (80 - 100)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#facc15;"></span>Medium Risk (40 - 79)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#16a34a;"></span>Low Risk (1 - 39)</div>
-
-    <hr style="margin:8px 0;">
-
-    <div style="margin-bottom:6px;"><b>100 - 1000</b></div>
-    <div class="legend-row"><span class="legend-color" style="background:#dc2626;"></span>High Risk (800 - 1000)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#facc15;"></span>Medium Risk (400 - 799)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#16a34a;"></span>Low Risk (100 - 399)</div>
-
-    <hr style="margin:8px 0;">
-
-    <div style="margin-bottom:6px;"><b>1000 - 10000</b></div>
-    <div class="legend-row"><span class="legend-color" style="background:#dc2626;"></span>High Risk (8000 - 10000)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#facc15;"></span>Medium Risk (4000 - 7999)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#16a34a;"></span>Low Risk (1000 - 3999)</div>
-
-    <hr style="margin:8px 0;">
-
-    <div style="margin-bottom:6px;"><b>10000 - 100000</b></div>
-    <div class="legend-row"><span class="legend-color" style="background:#dc2626;"></span>High Risk (80000 - 100000)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#facc15;"></span>Medium Risk (40000 - 79999)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#16a34a;"></span>Low Risk (10000 - 39999)</div>
-
-    <hr style="margin:8px 0;">
-
-    <div style="margin-bottom:6px;"><b>100000 - 1000000</b></div>
-    <div class="legend-row"><span class="legend-color" style="background:#dc2626;"></span>High Risk (800000 - 1000000)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#facc15;"></span>Medium Risk (400000 - 799999)</div>
-    <div class="legend-row"><span class="legend-color" style="background:#16a34a;"></span>Low Risk (100000 - 399999)</div>
+    <div class="legend-title">Risk Legend</div>
+    <div class="legend-items">
+      <div class="legend-item">
+        <span class="legend-color" style="background:#dc2626;"></span>
+        <span>High Risk</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background:#facc15;"></span>
+        <span>Medium Risk</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background:#16a34a;"></span>
+        <span>Low Risk</span>
+      </div>
+    </div>
   `;
-
   return div;
 };
 
