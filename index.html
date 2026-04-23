@@ -257,15 +257,16 @@ function municipalityTooltipHtml(city) {
   `;
 }
 
-function updateDistrictTooltip(name) {
-  if (districtLayers[name]) {
-    districtLayers[name].setTooltipContent(districtTooltipHtml(name));
-  }
-}
-
-function updateMunicipalityTooltip(city) {
-  if (municipalityBoundaryLayers[city]) {
-    municipalityBoundaryLayers[city].setTooltipContent(municipalityTooltipHtml(city));
+function bindOrUpdateTooltip(layer, html) {
+  if (layer.getTooltip()) {
+    layer.setTooltipContent(html);
+  } else {
+    layer.bindTooltip(html, {
+      sticky: true,
+      direction: "top",
+      opacity: 0.95,
+      className: "custom-tooltip"
+    });
   }
 }
 
@@ -455,12 +456,7 @@ function applyIncidentData(rows) {
     const city = districtToCity[name];
     if (districtLayers[name]) {
       districtLayers[name].setStyle(districtStyle(city, name));
-      updateDistrictTooltip(name);
     }
-  });
-
-  Object.keys(municipalityBoundaryLayers).forEach(city => {
-    updateMunicipalityTooltip(city);
   });
 
   scheduleRefresh();
@@ -492,15 +488,11 @@ Promise.all([
       style: boundaryStyle(city)
     });
 
-    boundary.bindTooltip(municipalityTooltipHtml(city), {
-      sticky: true,
-      direction: "top",
-      opacity: 0.95,
-      className: "custom-tooltip"
-    });
+    bindOrUpdateTooltip(boundary, municipalityTooltipHtml(city));
 
-    boundary.on("mouseover", function () {
-      updateMunicipalityTooltip(city);
+    boundary.on("mouseover", function (e) {
+      bindOrUpdateTooltip(boundary, municipalityTooltipHtml(city));
+      boundary.openTooltip(e.latlng);
     });
 
     municipalityBoundaryLayers[city] = boundary;
@@ -523,12 +515,7 @@ Promise.all([
         style: districtStyle(city, districtName)
       });
 
-      layer.bindTooltip(districtTooltipHtml(districtName), {
-        sticky: true,
-        direction: "top",
-        opacity: 0.95,
-        className: "custom-tooltip"
-      });
+      bindOrUpdateTooltip(layer, districtTooltipHtml(districtName));
 
       layer.on({
         mouseover: function (e) {
@@ -539,7 +526,9 @@ Promise.all([
             fillColor: getDistrictFillColor(districtName),
             fillOpacity: 0.85
           });
-          updateDistrictTooltip(districtName);
+
+          bindOrUpdateTooltip(layer, districtTooltipHtml(districtName));
+          layer.openTooltip(e.latlng);
         },
         mouseout: function (e) {
           e.target.setStyle(districtStyle(city, districtName));
@@ -635,15 +624,26 @@ Promise.all([
     }
   ).addTo(map);
 
-  // Use only municipality boundaries for startup bounds = faster
-  const startupLayers = [
+  // -----------------------------
+  // DEFAULT SELECT ALL
+  // -----------------------------
+  const allLayers = [
     municipalityBoundaryLayers["Dammam"],
     municipalityBoundaryLayers["Dhahran"],
-    municipalityBoundaryLayers["Khobar"]
+    municipalityBoundaryLayers["Khobar"],
+    ...dammamDistricts.map(x => x.layer),
+    ...dhahranDistricts.map(x => x.layer),
+    ...khobarDistricts.map(x => x.layer)
   ].filter(Boolean);
 
-  if (startupLayers.length > 0) {
-    map.fitBounds(L.featureGroup(startupLayers).getBounds());
+  allLayers.forEach(layer => {
+    if (!map.hasLayer(layer)) {
+      layer.addTo(map);
+    }
+  });
+
+  if (allLayers.length > 0) {
+    map.fitBounds(L.featureGroup(allLayers).getBounds());
   }
 
   mapReady = true;
