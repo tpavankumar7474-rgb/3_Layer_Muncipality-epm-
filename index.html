@@ -36,6 +36,16 @@ html, body { margin:0; padding:0; height:100%; }
   white-space: nowrap;
   text-align: center;
 }
+
+.leaflet-tooltip.custom-tooltip {
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #333;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  color: #111;
+  padding: 6px 8px;
+  font-size: 13px;
+}
 </style>
 </head>
 <body>
@@ -68,11 +78,11 @@ function boundaryStyle(city) {
 
 function districtStyle(city) {
   return {
-    color: "#000000",      // black district border
-    weight: 2,             // thicker border
+    color: "#000000",
+    weight: 2,
     opacity: 1,
     fillColor: municipalityColors[city],
-    fillOpacity: 0.60      // darker district fill
+    fillOpacity: 0.60
   };
 }
 
@@ -146,11 +156,32 @@ function refreshCounts() {
         }
 
         districtMarkers[name].addTo(map);
+
+        // refresh district tooltip count
+        if (districtLayers[name]) {
+          const tooltipHtml = `
+            <div>
+              <b>District:</b> ${name}<br>
+              <b>Municipality:</b> ${districtToCity[name] || ""}<br>
+              <b>Count:</b> ${d.count}
+            </div>
+          `;
+          districtLayers[name].setTooltipContent(tooltipHtml);
+        }
       });
     } else {
       const boundary = municipalityBoundaryLayers[city];
       const total = municipalityTotals[city] || 0;
       const center = municipalityCenters[city];
+
+      if (boundary) {
+        boundary.setTooltipContent(`
+          <div>
+            <b>Municipality:</b> ${city}<br>
+            <b>Count:</b> ${total}
+          </div>
+        `);
+      }
 
       if (boundary && center && map.hasLayer(boundary) && total > 0) {
         if (!municipalityMarkers[city]) {
@@ -189,7 +220,30 @@ Promise.all([
 
     const boundary = L.geoJSON(f, {
       style: boundaryStyle(city)
-    }).bindTooltip(city);
+    });
+
+    boundary.bindTooltip(
+      `<div>
+        <b>Municipality:</b> ${city}<br>
+        <b>Count:</b> 0
+      </div>`,
+      {
+        sticky: true,
+        direction: "top",
+        opacity: 0.95,
+        className: "custom-tooltip"
+      }
+    );
+
+    boundary.on("mouseover", function () {
+      const total = municipalityTotals[city] || 0;
+      boundary.setTooltipContent(`
+        <div>
+          <b>Municipality:</b> ${city}<br>
+          <b>Count:</b> ${total}
+        </div>
+      `);
+    });
 
     municipalityBoundaryLayers[city] = boundary;
 
@@ -206,7 +260,25 @@ Promise.all([
 
       const layer = L.geoJSON(f, {
         style: districtStyle(city)
-      }).bindTooltip(districtName + " (" + city + ")");
+      });
+
+      function getDistrictTooltipHtml() {
+        const count = districtCounts[districtName]?.count ?? 0;
+        return `
+          <div>
+            <b>District:</b> ${districtName}<br>
+            <b>Municipality:</b> ${city}<br>
+            <b>Count:</b> ${count}
+          </div>
+        `;
+      }
+
+      layer.bindTooltip(getDistrictTooltipHtml(), {
+        sticky: true,
+        direction: "top",
+        opacity: 0.95,
+        className: "custom-tooltip"
+      });
 
       layer.on({
         mouseover: function (e) {
@@ -217,6 +289,7 @@ Promise.all([
             fillColor: municipalityColors[city],
             fillOpacity: 0.85
           });
+          layer.setTooltipContent(getDistrictTooltipHtml());
         },
         mouseout: function (e) {
           e.target.setStyle(districtStyle(city));
