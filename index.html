@@ -61,7 +61,7 @@ html, body { margin:0; padding:0; height:100%; }
   font-size: 13px;
   color: #111;
   z-index: 9999;
-  min-width: 320px;
+  min-width: 340px;
   text-align: center;
 }
 
@@ -91,6 +91,7 @@ html, body { margin:0; padding:0; height:100%; }
 }
 </style>
 </head>
+
 <body>
 <div id="map"></div>
 
@@ -99,6 +100,7 @@ html, body { margin:0; padding:0; height:100%; }
 
 <script>
 const map = L.map("map");
+
 const osm = L.tileLayer(
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   { attribution: "&copy; OpenStreetMap contributors" }
@@ -121,10 +123,17 @@ const districtToCity = {};
 const districtLayers = {};
 const municipalityBoundaryLayers = {};
 const municipalityCenters = {};
+
 const municipalityTotals = {
   "Dammam": 0,
   "Dhahran": 0,
   "Khobar": 0
+};
+
+const municipalityRiskStats = {
+  "Dammam": { min: 0, max: 0, lowLimit: 0, highLimit: 0 },
+  "Dhahran": { min: 0, max: 0, lowLimit: 0, highLimit: 0 },
+  "Khobar": { min: 0, max: 0, lowLimit: 0, highLimit: 0 }
 };
 
 const districtMarkers = {};
@@ -155,55 +164,74 @@ function makeCountIcon(text, width = 50, anchorX = 25) {
 }
 
 // -----------------------------
-// RISK LOGIC
+// RISK LOGIC - MUNICIPALITY WISE
 // -----------------------------
-function getRiskLevel(count) {
+function getDistrictCount(districtName) {
+  return Number(districtCounts[districtName]?.count || 0);
+}
+
+function calculateMunicipalityRiskStats() {
+  ["Dammam", "Dhahran", "Khobar"].forEach(city => {
+    const values = Object.keys(districtToCity)
+      .filter(name => districtToCity[name] === city)
+      .map(name => getDistrictCount(name))
+      .filter(v => v > 0);
+
+    if (values.length === 0) {
+      municipalityRiskStats[city] = {
+        min: 0,
+        max: 0,
+        lowLimit: 0,
+        highLimit: 0
+      };
+      return;
+    }
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+
+    municipalityRiskStats[city] = {
+      min: min,
+      max: max,
+      lowLimit: min + range * 0.33,
+      highLimit: min + range * 0.66
+    };
+  });
+}
+
+function getRiskLevel(count, city) {
   count = Number(count || 0);
 
   if (count <= 0) {
     return { level: "No Data", color: "#2563eb" };
   }
 
-  if (count <= 100) {
-    if (count >= 80) return { level: "High Risk", color: "#dc2626" };
-    if (count >= 40) return { level: "Medium Risk", color: "#facc15" };
-    return { level: "Low Risk", color: "#16a34a" };
+  const stats = municipalityRiskStats[city];
+
+  if (!stats || stats.max === 0) {
+    return { level: "No Data", color: "#2563eb" };
   }
 
-  if (count <= 1000) {
-    if (count >= 800) return { level: "High Risk", color: "#dc2626" };
-    if (count >= 400) return { level: "Medium Risk", color: "#facc15" };
-    return { level: "Low Risk", color: "#16a34a" };
+  if (stats.max === stats.min) {
+    return { level: "High Risk", color: "#dc2626" };
   }
 
-  if (count <= 10000) {
-    if (count >= 8000) return { level: "High Risk", color: "#dc2626" };
-    if (count >= 4000) return { level: "Medium Risk", color: "#facc15" };
-    return { level: "Low Risk", color: "#16a34a" };
+  if (count >= stats.highLimit) {
+    return { level: "High Risk", color: "#dc2626" };
   }
 
-  if (count <= 100000) {
-    if (count >= 80000) return { level: "High Risk", color: "#dc2626" };
-    if (count >= 40000) return { level: "Medium Risk", color: "#facc15" };
-    return { level: "Low Risk", color: "#16a34a" };
+  if (count >= stats.lowLimit) {
+    return { level: "Medium Risk", color: "#facc15" };
   }
 
-  if (count <= 1000000) {
-    if (count >= 800000) return { level: "High Risk", color: "#dc2626" };
-    if (count >= 400000) return { level: "Medium Risk", color: "#facc15" };
-    return { level: "Low Risk", color: "#16a34a" };
-  }
-
-  return { level: "High Risk", color: "#dc2626" };
-}
-
-function getDistrictCount(districtName) {
-  return Number(districtCounts[districtName]?.count || 0);
+  return { level: "Low Risk", color: "#16a34a" };
 }
 
 function getDistrictFillColor(districtName) {
   const count = getDistrictCount(districtName);
-  return getRiskLevel(count).color;
+  const city = districtToCity[districtName];
+  return getRiskLevel(count, city).color;
 }
 
 // -----------------------------
@@ -234,7 +262,7 @@ function districtStyle(city, districtName = "") {
 function districtTooltipHtml(districtName) {
   const city = districtToCity[districtName] || "";
   const count = getDistrictCount(districtName);
-  const risk = getRiskLevel(count);
+  const risk = getRiskLevel(count, city);
 
   return `
     <div>
@@ -339,19 +367,19 @@ const legend = L.control({ position: "bottomleft" });
 legend.onAdd = function () {
   const div = L.DomUtil.create("div", "info legend simple-legend");
   div.innerHTML = `
-    <div class="legend-title">Risk Legend</div>
+    <div class="legend-title">Municipality Wise Risk Legend</div>
     <div class="legend-items">
       <div class="legend-item">
         <span class="legend-color" style="background:#dc2626;"></span>
-        <span>High Risk</span>
+        <span>High Value</span>
       </div>
       <div class="legend-item">
         <span class="legend-color" style="background:#facc15;"></span>
-        <span>Medium Risk</span>
+        <span>Medium Value</span>
       </div>
       <div class="legend-item">
         <span class="legend-color" style="background:#16a34a;"></span>
-        <span>Low Risk</span>
+        <span>Low Value</span>
       </div>
       <div class="legend-item">
         <span class="legend-color" style="background:#2563eb;"></span>
@@ -405,6 +433,7 @@ function refreshCounts() {
 
         if (districtLayers[name]) {
           districtLayers[name].setStyle(districtStyle(city, name));
+          bindOrUpdateTooltip(districtLayers[name], districtTooltipHtml(name));
         }
       });
 
@@ -417,6 +446,10 @@ function refreshCounts() {
         activeMunicipalityMarkers.add(city);
       }
     }
+
+    if (boundary) {
+      bindOrUpdateTooltip(boundary, municipalityTooltipHtml(city));
+    }
   });
 
   hideUnusedDistrictMarkers(activeDistrictMarkers);
@@ -428,6 +461,7 @@ function refreshCounts() {
 // -----------------------------
 function applyIncidentData(rows) {
   Object.keys(districtCounts).forEach(k => delete districtCounts[k]);
+
   municipalityTotals["Dammam"] = 0;
   municipalityTotals["Dhahran"] = 0;
   municipalityTotals["Khobar"] = 0;
@@ -452,14 +486,37 @@ function applyIncidentData(rows) {
     }
   });
 
+  calculateMunicipalityRiskStats();
+
   Object.keys(districtLayers).forEach(name => {
     const city = districtToCity[name];
     if (districtLayers[name]) {
       districtLayers[name].setStyle(districtStyle(city, name));
+      bindOrUpdateTooltip(districtLayers[name], districtTooltipHtml(name));
     }
   });
 
+  Object.keys(municipalityBoundaryLayers).forEach(city => {
+    bindOrUpdateTooltip(municipalityBoundaryLayers[city], municipalityTooltipHtml(city));
+  });
+
   scheduleRefresh();
+}
+
+// -----------------------------
+// COLLAPSE TREE CONTROL GROUPS
+// -----------------------------
+function collapseLayerTreeGroups() {
+  setTimeout(() => {
+    document.querySelectorAll(".leaflet-layerstree-header-pointer").forEach(pointer => {
+      const node = pointer.closest(".leaflet-layerstree-node");
+      if (!node) return;
+
+      if (!node.classList.contains("leaflet-layerstree-node-collapsed")) {
+        pointer.click();
+      }
+    });
+  }, 300);
 }
 
 // -----------------------------
@@ -511,6 +568,8 @@ Promise.all([
     return data.features.map(f => {
       const districtName = (f.properties.REMARKS || "").trim();
 
+      districtToCity[districtName] = city;
+
       const layer = L.geoJSON(f, {
         style: districtStyle(city, districtName)
       });
@@ -535,27 +594,17 @@ Promise.all([
         },
         click: function () {
           const d = districtCounts[districtName];
-          if (d) {
-            window.parent.postMessage({
-              type: "mapClick",
-              state: districtName,
-              lat: d.lat,
-              long: d.long
-            }, "*");
-          } else {
-            window.parent.postMessage({
-              type: "mapClick",
-              state: districtName,
-              lat: null,
-              long: null
-            }, "*");
-          }
+
+          window.parent.postMessage({
+            type: "mapClick",
+            state: districtName,
+            lat: d ? d.lat : null,
+            long: d ? d.long : null
+          }, "*");
         }
       });
 
       districtLayers[districtName] = layer;
-      districtToCity[districtName] = city;
-
       layer.on("add remove", scheduleRefresh);
 
       return {
@@ -574,6 +623,7 @@ Promise.all([
   // -----------------------------
   const overlaysTree = {
     label: "Municipality",
+    selectAllCheckbox: false,
     children: [
       {
         label: "Dammam",
@@ -620,30 +670,31 @@ Promise.all([
     {
       collapsed: false,
       namedToggle: true,
-      selectorBack: false
+      selectorBack: false,
+      closedSymbol: "▶",
+      openedSymbol: "▼"
     }
   ).addTo(map);
 
+  collapseLayerTreeGroups();
+
   // -----------------------------
-  // DEFAULT SELECT ALL
+  // DEFAULT SELECT ONLY BOUNDARY
   // -----------------------------
-  const allLayers = [
+  const defaultBoundaryLayers = [
     municipalityBoundaryLayers["Dammam"],
     municipalityBoundaryLayers["Dhahran"],
-    municipalityBoundaryLayers["Khobar"],
-    ...dammamDistricts.map(x => x.layer),
-    ...dhahranDistricts.map(x => x.layer),
-    ...khobarDistricts.map(x => x.layer)
+    municipalityBoundaryLayers["Khobar"]
   ].filter(Boolean);
 
-  allLayers.forEach(layer => {
+  defaultBoundaryLayers.forEach(layer => {
     if (!map.hasLayer(layer)) {
       layer.addTo(map);
     }
   });
 
-  if (allLayers.length > 0) {
-    map.fitBounds(L.featureGroup(allLayers).getBounds());
+  if (defaultBoundaryLayers.length > 0) {
+    map.fitBounds(L.featureGroup(defaultBoundaryLayers).getBounds());
   }
 
   mapReady = true;
@@ -652,6 +703,7 @@ Promise.all([
     applyIncidentData(pendingIncidentData);
     pendingIncidentData = null;
   } else {
+    calculateMunicipalityRiskStats();
     scheduleRefresh();
   }
 
